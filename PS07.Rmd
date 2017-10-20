@@ -1,6 +1,6 @@
 ---
 title: "STAT/MATH 495: Problem Set 07"
-author: "WRITE YOUR NAME(S) HERE"
+author: "Jonathan Che"
 date: "2017-10-24"
 output:
   html_document:
@@ -22,50 +22,140 @@ set.seed(76)
 library(tidyverse)
 library(broom)
 library(knitr)
+library(ROCR)
 
 train <- read_csv("data/cs-training.csv") %>% 
   rename(Id = X1)
 test <- read_csv("data/cs-test.csv") %>% 
   rename(Id = X1)
 submission <- read_csv("data/sampleEntry.csv")
+
+train_simple <- train %>%
+  select(SeriousDlqin2yrs, DebtRatio, age, MonthlyIncome) %>%
+  rename(dlq = SeriousDlqin2yrs) %>%   # easier to reference
+  mutate(dlq_factor = as.logical(dlq))
 ```
 
 Information on the competition can be found [here](https://www.kaggle.com/c/GiveMeSomeCredit/data).
 
+# EDA
 
+I first examine the distributions of the three chosen variables. Note that `DebtRatio` and `MonthlyIncome` exhibit strong power-law right skews, so I look at their logs (or log(x+1)) instead. Also, DebtRatio has a large number of values near 0. As such, only the histogram that excludes those values can capture the more delicate trends in the right tail of its distribution.
 
-# Collaboration
+```{r, echo=FALSE}
+ggplot(train_simple) +
+  geom_histogram(aes(x=age)) +
+  labs(
+    title="Histogram of Age"
+  )
+# DebtRatio	= monthly (debt payments, alimony, living costs) / (gross income)
+ggplot(train_simple) +
+  geom_histogram(aes(x=log1p(DebtRatio))) +
+  labs(
+    title="Histogram of Log of Debt Ratio (+1)"
+  )
+ggplot(train_simple) +
+  geom_histogram(aes(x=log(DebtRatio))) +
+  labs(
+    title="Histogram of Log of Debt Ratio"
+  )
+ggplot(train_simple) +
+  geom_histogram(aes(x=log1p(MonthlyIncome))) +
+  labs(
+    title="Histogram of Log of Monthly Income (+1)"
+  )
+```
 
-Please indicate who you collaborated with on this assignment: 
+Now, I visualize each of the three variables' relationships with `dlq`.
 
+```{r, echo=FALSE, warning=FALSE}
+ggplot(train_simple, aes(x=age, fill=dlq_factor)) +
+  geom_histogram(position="fill") +
+  stat_bin(
+    aes(label=..count.., group=dlq_factor),
+    geom="text", color="white", angle=90,
+    position=position_fill(vjust=0.5)) +
+  labs(
+    title="Delinquency vs. Age",
+    x="Age",
+    y="Proportion with Delinquencies",
+    fill="Has Experienced \nDelinquency in \nPast Two Years"
+  )
+ggplot(train_simple, aes(x=log1p(DebtRatio), fill=dlq_factor)) +
+  geom_histogram(position="fill") +
+  stat_bin(
+    aes(label=..count.., group=dlq_factor),
+    geom="text", color="white", angle=90,
+    position=position_fill(vjust=0.5)) +
+  labs(
+    title="Delinquency vs. Log of Debt Ratio (+1)",
+    x="Log of Debt Ratio (+1)",
+    y="Proportion with Delinquencies",
+    fill="Has Experienced \nDelinquency in \nPast Two Years"
+  )
+ggplot(train_simple, aes(x=log1p(MonthlyIncome), fill=dlq_factor)) +
+  geom_histogram(position="fill") +
+  stat_bin(
+    aes(label=..count.., group=dlq_factor),
+    geom="text", color="white", angle=90,
+    position=position_fill(vjust=0.5)) +
+  labs(
+    title="Delinquency vs. Log of Monthly Income (+1)",
+    x="Log of Monthly Income (+1)",
+    y="Proportion with Delinquencies",
+    fill="Has Experienced \nDelinquency in \nPast Two Years"
+  )
+```
 
+Of the three potential variables, `age` seems like it has the clearest and most intuitive trends for the proportion of individuals that have experienced delinquency in the past two years. While there are trends in the other two variables, the trends don't seem as "linear" as the one in age. Since I will be using logistic regression, it will be simpler (and hopefully better) to use the information captured by a linear relationship rather than create categoricals and indicators to help a logistic regression capture the relationships of `dlq` with `DebtRatio` and `MonthlyIncome`.
 
 # Build binary classifier
 
-Build the binary classifier based on a single predictor variable: `DebtRatio`,
-`age`, or `MonthlyIncome`. Justify this choice.
+So, I train a logistic regression model on `age`.
 
 ```{r}
-
+m <- glm(SeriousDlqin2yrs ~ age, data=train, family="binomial")
 ```
-
-
 
 # ROC curve
 
-Based on the ultimate classifier you choose, plot a corresponding ROC curve.
+Now I plot a ROC curve for the model I trained.
 
-```{r}
+```{r, warning=FALSE, echo=FALSE}
+# Get data into proper format
+profiles_train_augmented <- m %>% 
+  broom::augment() %>% 
+  as_tibble() %>% 
+  mutate(p_hat = 1/(1+exp(-.fitted)))
 
+# Compute the ROC curve
+pred <- prediction(
+  predictions = profiles_train_augmented$p_hat, 
+  labels = profiles_train_augmented$SeriousDlqin2yrs)
+perf <- performance(pred, "tpr","fpr")
+
+# Print ROC curve
+auc <- as.numeric(performance(pred,"auc")@y.values)
+plot(perf, main=paste("Area Under the Curve =", round(auc, 3)))
+abline(c(0, 1), lty=2)
 ```
-
-
 
 # ROC curve for random guessing
 
-Instead of using any predictor information as you did above, switch your
-predictions to random guesses and plot the resulting ROC curve.
+We can also see what the ROC curve would look like if we just randomly guessed instead of using logistic regression.
 
-```{r}
+```{r, warning=FALSE, echo=FALSE}
+# Generate random guesses
+random <- sample(0:1, nrow(train), replace=T)
 
+# Compute the ROC curve
+pred <- prediction(
+  predictions = random, 
+  labels = profiles_train_augmented$SeriousDlqin2yrs)
+perf <- performance(pred, "tpr","fpr")
+
+# Print ROC curve
+auc <- as.numeric(performance(pred,"auc")@y.values)
+plot(perf, main=paste("Area Under the Curve =", round(auc, 3)))
+abline(c(0, 1), lty=2)
 ```
