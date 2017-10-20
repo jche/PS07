@@ -111,10 +111,18 @@ Of the three potential variables, `age` seems like it has the clearest and most 
 
 # Build binary classifier
 
-So, I train a logistic regression model on `age`.
+So, I train a logistic regression model on `age` and create my Kaggle submission.
 
-```{r}
+```{r, warning=FALSE}
 m <- glm(SeriousDlqin2yrs ~ age, data=train, family="binomial")
+
+preds <- predict(m, test)
+submission <- data.frame(test$Id, preds) %>%
+  mutate(
+    Id = test.Id,
+    Probability = 1/(1+exp(-preds))) %>%   # Convert log odds to probabilities
+  select(-test.Id, -preds)
+write.csv(submission, "submission.csv", row.names=FALSE)
 ```
 
 # ROC curve

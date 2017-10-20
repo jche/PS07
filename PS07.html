@@ -233,8 +233,16 @@ div.tocify {
 </div>
 <div id="build-binary-classifier" class="section level1">
 <h1>Build binary classifier</h1>
-<p>So, I train a logistic regression model on <code>age</code>.</p>
-<pre class="r"><code>m &lt;- glm(SeriousDlqin2yrs ~ age, data=train, family=&quot;binomial&quot;)</code></pre>
+<p>So, I train a logistic regression model on <code>age</code> and create my Kaggle submission.</p>
+<pre class="r"><code>m &lt;- glm(SeriousDlqin2yrs ~ age, data=train, family=&quot;binomial&quot;)
+
+preds &lt;- predict(m, test)
+submission &lt;- data.frame(test$Id, preds) %&gt;%
+  mutate(
+    Id = test.Id,
+    Probability = 1/(1+exp(-preds))) %&gt;%   # Convert log odds to probabilities
+  select(-test.Id, -preds)
+write.csv(submission, &quot;submission.csv&quot;, row.names=FALSE)</code></pre>
 </div>
 <div id="roc-curve" class="section level1">
 <h1>ROC curve</h1>
